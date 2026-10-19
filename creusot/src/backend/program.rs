@@ -17,7 +17,10 @@ use crate::{
         optimization::optimizations,
         projections::{Focus, borrow_generated_id, projections_to_expr},
         signature::{Contract, ProgramSignature, lower_program_sig},
-        term::{cast_int, lower_pure, unsupported_cast},
+        term::{
+            cast_float, cast_float_guard, cast_int, float_cast_supported, lower_pure,
+            unsupported_cast,
+        },
         ty::{
             constructor, floatty_to_prelude, int, ity_to_prelude, sign_extend, translate_ty,
             ty_to_prelude, uty_to_prelude,
@@ -799,6 +802,17 @@ impl<'tcx> RValue<'tcx> {
             RValue::Cast(e, source, target) => {
                 let arg = e.into_why(lower, istmts, span);
                 match source.kind() {
+                    // A lossy float cast is proved safe here, never clamped:
+                    // assert the guard, then apply the total conversion.
+                    _ if source.is_floating_point() || target.is_floating_point() => {
+                        if !float_cast_supported(lower.names, source, target) {
+                            unsupported_cast(lower.ctx, span, source, target)
+                        }
+                        if let Some(guard) = cast_float_guard(lower.names, source, target, &arg) {
+                            istmts.push(IntermediateStmt::Assert(guard));
+                        }
+                        cast_float(lower.names, source, target, arg)
+                    }
                     TyKind::Bool => {
                         let prelude = match target.kind() {
                             TyKind::Int(ity) => ity_to_prelude(lower.ctx.tcx, *ity),

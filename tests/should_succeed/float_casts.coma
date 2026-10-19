@@ -1,0 +1,203 @@
+module M_abs_keeps_number
+  use creusot.float.Float64
+  use creusot.prelude.Any
+  
+  let abs (self: Float64.t) (return (x: Float64.t)) = any
+    [ return (result: Float64.t) -> {[@stop_split] [@expl:abs ensures] result = Float64.abs self} (! return {result}) ]
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let abs_keeps_number (x: Float64.t) (return (x'0: Float64.t)) =
+  {[@stop_split] [@expl:abs_keeps_number requires] not Float64.is_nan x}
+    (! bb0
+    [ bb0 = s0 [ s0 = abs {x} (fun (_x: Float64.t) -> [ &_ret <- _x ] s1) | s1 = return {_ret} ] ]
+    [ & _ret: Float64.t = Any.any_l () | & x: Float64.t = x ])
+    [ return (result: Float64.t) -> {[@stop_split] [@expl:abs_keeps_number ensures] not Float64.is_nan result}
+      (! return {result}) ]
+end
+module M_float_to_byte
+  use creusot.float.Float64
+  use creusot.int.UInt8
+  use creusot.prelude.Any
+  
+  predicate le_log_f64 [@inline:trivial] (self: Float64.t) (other: Float64.t) = Float64.lt self other \/ self = other
+  
+  meta "rewrite_def" predicate le_log_f64
+  
+  constant const_F64_ZERO: Float64.t = (0.0: Float64.t)
+  
+  constant const_F64_BYTE_MAX: Float64.t = (255.0: Float64.t)
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let float_to_byte (x: Float64.t) (return (x'0: UInt8.t)) =
+  {[@stop_split] [@expl:float_to_byte requires] le_log_f64 const_F64_ZERO x /\ le_log_f64 x const_F64_BYTE_MAX}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = {[@expl:float to integer cast out of range] Float64.is_finite x /\ UInt8.in_bounds (Float64.to_int x)}
+        [ &_ret <- UInt8.of_int (Float64.to_int x) ] s1
+      | s1 = return {_ret} ] ] [ & _ret: UInt8.t = Any.any_l () | & x: Float64.t = x ])
+    [ return (result: UInt8.t) -> (! return {result}) ]
+end
+module M_int_to_float
+  use creusot.int.Int32
+  use creusot.float.Float64
+  use creusot.prelude.Any
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let int_to_float (x: Int32.t) (return (x'0: Float64.t)) = (! bb0
+    [ bb0 = s0 [ s0 = [ &_ret <- Float64.of_int (Int32.to_int x) ] s1 | s1 = return {_ret} ] ]
+    [ & _ret: Float64.t = Any.any_l () | & x: Int32.t = x ])
+    [ return (result: Float64.t) -> {[@stop_split] [@expl:int_to_float ensures] Float64.is_finite result}
+      (! return {result}) ]
+end
+module M_max_is_upper_bound
+  use creusot.float.Float64
+  use creusot.prelude.Any
+  
+  let max (self: Float64.t) (other: Float64.t) (return (x: Float64.t)) = any
+    [ return (result: Float64.t) ->
+    {[@stop_split] [@expl:max ensures] ([@stop_split] [@expl:max ensures #0] Float64.is_nan self /\ Float64.is_nan other
+        -> Float64.is_nan result)
+      /\ ([@stop_split] [@expl:max ensures #1] not (Float64.is_nan self /\ Float64.is_nan other)
+        -> result = self \/ result = other)
+      /\ ([@stop_split] [@expl:max ensures #2] Float64.is_nan self /\ not Float64.is_nan other -> result = other)
+      /\ ([@stop_split] [@expl:max ensures #3] not Float64.is_nan self /\ Float64.is_nan other -> result = self)
+      /\ ([@stop_split] [@expl:max ensures #4] not Float64.is_nan self /\ not Float64.is_nan other
+      -> not Float64.lt result self /\ not Float64.lt result other)}
+      (! return {result}) ]
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let max_is_upper_bound (a: Float64.t) (b: Float64.t) (return (x: Float64.t)) =
+  {[@stop_split] [@expl:max_is_upper_bound requires] not Float64.is_nan a /\ not Float64.is_nan b}
+    (! bb0
+    [ bb0 = s0 [ s0 = max {a} {b} (fun (_x: Float64.t) -> [ &_ret <- _x ] s1) | s1 = return {_ret} ] ]
+    [ & _ret: Float64.t = Any.any_l () | & a: Float64.t = a | & b: Float64.t = b ])
+    [ return (result: Float64.t) -> {[@stop_split] [@expl:max_is_upper_bound ensures] not Float64.lt result a
+      /\ not Float64.lt result b}
+      (! return {result}) ]
+end
+module M_nan_check
+  use creusot.float.Float64
+  use creusot.prelude.Any
+  
+  let is_nan (self: Float64.t) (return (x: bool)) = any
+    [ return (result: bool) -> {[@stop_split] [@expl:is_nan ensures] result = Float64.is_nan self} (! return {result}) ]
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let nan_check (x: Float64.t) (return (x'0: bool)) = (! bb0
+    [ bb0 = s0 [ s0 = is_nan {x} (fun (_x: bool) -> [ &_ret <- _x ] s1) | s1 = return {_ret} ] ]
+    [ & _ret: bool = Any.any_l () | & x: Float64.t = x ])
+    [ return (result: bool) -> {[@stop_split] [@expl:nan_check ensures] result = Float64.is_nan x} (! return {result}) ]
+end
+module M_narrow_bounded
+  use creusot.float.FloatConvert
+  use creusot.float.Float32
+  use creusot.prelude.Any
+  use creusot.float.Float64
+  
+  predicate le_log_f64 [@inline:trivial] (self: Float64.t) (other: Float64.t) = Float64.lt self other \/ self = other
+  
+  meta "rewrite_def" predicate le_log_f64
+  
+  constant const_F64_NEGATIVE_BOUND: Float64.t = (-0x1.93e5939a08ceap99: Float64.t)
+  
+  constant const_F64_BOUND: Float64.t = (0x1.93e5939a08ceap99: Float64.t)
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let narrow_bounded (x: Float64.t) (return (x'0: Float32.t)) =
+  {[@stop_split] [@expl:narrow_bounded requires] le_log_f64 const_F64_NEGATIVE_BOUND x /\ le_log_f64 x const_F64_BOUND}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = {[@expl:float narrowing overflow] FloatConvert.narrowing_in_range x}
+        [ &_ret <- FloatConvert.to_float32 x ] s1
+      | s1 = return {_ret} ] ] [ & _ret: Float32.t = Any.any_l () | & x: Float64.t = x ])
+    [ return (result: Float32.t) -> (! return {result}) ]
+end
+module M_narrow_constant
+  use creusot.float.Float64
+  use creusot.float.FloatConvert
+  use creusot.float.Float32
+  use creusot.prelude.Any
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let narrow_constant (return (x: Float32.t)) = (! bb0
+    [ bb0 = s0
+      [ s0 = {[@expl:float narrowing overflow] FloatConvert.narrowing_in_range (0x1.8000000000000p0: Float64.t)}
+        [ &_ret <- FloatConvert.to_float32 (0x1.8000000000000p0: Float64.t) ] s1
+      | s1 = return {_ret} ] ] [ & _ret: Float32.t = Any.any_l () ])
+    [ return (result: Float32.t) -> (! return {result}) ]
+end
+module M_small_u128_to_f32
+  use creusot.float.Float32
+  use creusot.int.UInt128
+  use creusot.prelude.Any
+  use int.Int
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let small_u128_to_f32 (x: UInt128.t) (return (x'0: Float32.t)) =
+  {[@stop_split] [@expl:small_u128_to_f32 requires] UInt128.t'int x < 1000000}
+    (! bb0
+    [ bb0 = s0
+      [ s0 = {[@expl:integer to float overflow] Float32.of_int_in_range (UInt128.t'int x)}
+        [ &_ret <- Float32.of_int (UInt128.t'int x) ] s1
+      | s1 = return {_ret} ] ] [ & _ret: Float32.t = Any.any_l () | & x: UInt128.t = x ])
+    [ return (result: Float32.t) -> (! return {result}) ]
+end
+module M_sqrt_is_ieee
+  use creusot.float.Float64
+  use creusot.prelude.Any
+  
+  let sqrt (self: Float64.t) (return (x: Float64.t)) = any
+    [ return (result: Float64.t) -> {[@stop_split] [@expl:sqrt ensures] result = Float64.sqrt self}
+      (! return {result}) ]
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let sqrt_is_ieee (x: Float64.t) (return (x'0: Float64.t)) = (! bb0
+    [ bb0 = s0 [ s0 = sqrt {x} (fun (_x: Float64.t) -> [ &_ret <- _x ] s1) | s1 = return {_ret} ] ]
+    [ & _ret: Float64.t = Any.any_l () | & x: Float64.t = x ])
+    [ return (result: Float64.t) -> {[@stop_split] [@expl:sqrt_is_ieee ensures] result = Float64.sqrt x}
+      (! return {result}) ]
+end
+module M_widen
+  use creusot.float.FloatConvert
+  use creusot.float.Float64
+  use creusot.prelude.Any
+  use creusot.float.Float32
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let widen (x: Float32.t) (return (x'0: Float64.t)) = (! bb0
+    [ bb0 = s0 [ s0 = [ &_ret <- FloatConvert.to_float64 x ] s1 | s1 = return {_ret} ] ]
+    [ & _ret: Float64.t = Any.any_l () | & x: Float32.t = x ])
+    [ return (result: Float64.t) -> {[@stop_split] [@expl:widen ensures] Float32.is_finite x
+      -> Float64.is_finite result /\ Float64.to_real result = Float32.to_real x}
+      (! return {result}) ]
+end

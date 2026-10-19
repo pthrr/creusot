@@ -1,0 +1,8 @@
+error: unsupported cast from f64 to u8 (allowed: bool as integer, integer as integer, pointer as pointer, or between f32, f64 and integers outside #[bitwise_proof])
+ --> float_cast_bitwise.rs:8:5
+  |
+8 |     x as u8
+  |     ^^^^^^^
+
+error: aborting due to 1 previous error
+

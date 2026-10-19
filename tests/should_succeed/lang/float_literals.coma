@@ -1,0 +1,48 @@
+module M_beyond_two_to_the_53
+  use creusot.float.Float64
+  use creusot.prelude.Any
+  
+  constant const_BIG: Float64.t = (0x1.93e5939a08ceap99: Float64.t)
+  
+  constant const_TEN: Float64.t = (10.0: Float64.t)
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let beyond_two_to_the_53 (return (x: Float64.t)) = (! bb0
+    [ bb0 = s0 [ s0 = [ &_ret <- const_BIG ] s1 | s1 = return {_ret} ] ] [ & _ret: Float64.t = Any.any_l () ])
+    [ return (result: Float64.t) -> {[@stop_split] [@expl:beyond_two_to_the_53 ensures] Float64.lt const_TEN result}
+      (! return {result}) ]
+end
+module M_leading_zero_nibble
+  use creusot.float.Float64
+  use creusot.prelude.Any
+  
+  constant const_ONE: Float64.t = (1.0: Float64.t)
+  
+  constant const_ONE_AND_A_SIXTEENTH: Float64.t = (0x1.1000000000000p0: Float64.t)
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let leading_zero_nibble (return (x: Float64.t)) = (! bb0
+    [ bb0 = s0 [ s0 = [ &_ret <- (0x1.0800000000000p0: Float64.t) ] s1 | s1 = return {_ret} ] ]
+    [ & _ret: Float64.t = Any.any_l () ])
+    [ return (result: Float64.t) -> {[@stop_split] [@expl:leading_zero_nibble ensures] Float64.lt const_ONE result
+      /\ Float64.lt result const_ONE_AND_A_SIXTEENTH}
+      (! return {result}) ]
+end
+module M_negative_zero
+  use creusot.float.Float64
+  use creusot.prelude.Any
+  
+  meta "compute_max_steps" 1000000
+  
+  meta "select_lsinst" "all"
+  
+  let negative_zero (return (x: Float64.t)) = (! bb0
+    [ bb0 = s0 [ s0 = [ &_ret <- (-0.0: Float64.t) ] s1 | s1 = return {_ret} ] ] [ & _ret: Float64.t = Any.any_l () ])
+    [ return (result: Float64.t) -> (! return {result}) ]
+end

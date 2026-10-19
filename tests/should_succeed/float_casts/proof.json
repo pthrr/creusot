@@ -1,0 +1,50 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_abs_keeps_number": {
+      "vc_abs": { "prover": "z3", "time": 0.01 },
+      "vc_abs_keeps_number": { "prover": "z3", "time": 0.014 }
+    },
+    "M_float_to_byte": {
+      "vc_float_to_byte": { "prover": "alt-ergo", "time": 0.364 }
+    },
+    "M_int_to_float": {
+      "vc_int_to_float": { "prover": "alt-ergo", "time": 0.059 }
+    },
+    "M_max_is_upper_bound": {
+      "vc_max": { "prover": "z3", "time": 0.007 },
+      "vc_max_is_upper_bound": { "prover": "z3", "time": 0.018 }
+    },
+    "M_nan_check": {
+      "vc_is_nan": { "prover": "z3", "time": 0.005 },
+      "vc_nan_check": { "prover": "z3", "time": 0.01 }
+    },
+    "M_narrow_bounded": {
+      "vc_narrow_bounded": { "prover": "cvc4", "time": 0.112 }
+    },
+    "M_narrow_constant": {
+      "vc_narrow_constant": { "prover": "z3", "time": 0.01 }
+    },
+    "M_small_u128_to_f32": {
+      "vc_small_u128_to_f32": { "prover": "cvc4", "time": 0.052 }
+    },
+    "M_sqrt_is_ieee": {
+      "vc_sqrt": { "prover": "z3", "time": 0.007 },
+      "vc_sqrt_is_ieee": { "prover": "z3", "time": 0.007 }
+    },
+    "M_widen": {
+      "vc_widen": {
+        "tactic": "split_vc",
+        "children": [
+          {
+            "tactic": "split_vc",
+            "children": [
+              { "prover": "z3", "time": 0.031 },
+              { "prover": "alt-ergo", "time": 0.049 }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

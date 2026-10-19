@@ -1,0 +1,14 @@
+{
+  "profile": [],
+  "proofs": {
+    "M_beyond_two_to_the_53": {
+      "vc_beyond_two_to_the_53": { "prover": "z3", "time": 0.006 }
+    },
+    "M_leading_zero_nibble": {
+      "vc_leading_zero_nibble": { "prover": "z3", "time": 0.008 }
+    },
+    "M_negative_zero": {
+      "vc_negative_zero": { "prover": "z3", "time": 0.01 }
+    }
+  }
+}

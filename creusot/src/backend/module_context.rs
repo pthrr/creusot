@@ -42,6 +42,13 @@ mod elaborator;
 pub enum PreMod {
     Float32,
     Float64,
+    /// Conversions between the two float formats. A module of its own because
+    /// `ieee_float.FloatConverter` uses both, so hosting `to_float32` /
+    /// `to_float64` in either `Float32` or `Float64` would make those two
+    /// prelude modules mutually dependent. It is therefore *not* reachable
+    /// from `ty_to_prelude`, which maps a single `Ty`; the float cast lowering
+    /// selects it from the source/target pair instead.
+    FloatConvert,
     Int,
     Int8,
     Int16,
@@ -162,6 +169,7 @@ pub(crate) trait Namer<'tcx> {
         let name: &[_] = match (module, self.bitwise_mode()) {
             (PreMod::Float32, _) => &["creusot", "float", "Float32"],
             (PreMod::Float64, _) => &["creusot", "float", "Float64"],
+            (PreMod::FloatConvert, _) => &["creusot", "float", "FloatConvert"],
             (PreMod::Int, _) => &["int", "Int"],
             (PreMod::Int8, false) => &["creusot", "int", "Int8"],
             (PreMod::Int16, false) => &["creusot", "int", "Int16"],

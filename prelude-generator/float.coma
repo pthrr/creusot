@@ -1,5 +1,6 @@
 module Float32
   use ieee_float.Float32
+  use real.FromInt
 
   type t = Float32.t
 
@@ -15,6 +16,53 @@ module Float32
   predicate gt (a:t) (b:t) = Float32.gt a b
   predicate eq (a:t) (b:t) = Float32.eq a b
   predicate ne (a:t) (b:t) = not (Float32.eq a b)
+
+  (* Mathematical view, realized by the clone as `t'real`. Meaningful only
+     under `is_finite`; every bound stated over `to_real` carries that
+     hypothesis explicitly rather than leaving the non-finite case quietly
+     unconstrained. *)
+  function to_real (a:t) : real = Float32.t'real a
+
+  (* `t'isFinite`, not `is_finite`: GenericFloat's clone substitutes both
+     `to_real` and `is_finite` by these built-ins, so only they are exported. *)
+  predicate is_finite (a:t) = Float32.t'isFinite a
+  predicate is_nan (a:t) = Float32.is_nan a
+  predicate is_infinite (a:t) = Float32.is_infinite a
+  (* Either zero, of either sign. *)
+  predicate is_zero (a:t) = Float32.is_zero a
+
+  (* Exact IEEE operations that Rust's `f32` methods of the same name perform. *)
+  function abs (a:t) : t = Float32.abs a
+  function sqrt (a:t) : t = Float32.sqrt RNE a
+  function round_ties_even (a:t) : t = Float32.roundToIntegral RNE a
+  (* IEEE fusedMultiplyAdd: `a · b + c` rounded once, as Rust's `mul_add`. *)
+  function mul_add (a:t) (b:t) (c:t) : t = Float32.fma RNE a b c
+
+  (* Total on every int, rounding to nearest-even. *)
+  function of_int (i:int) : t = Float32.of_int RNE i
+
+  (* Whether `of_int` of this integer stays finite. Only `u128 as f32` can fail
+     it — every other integer type's range fits inside both float formats — so
+     only Float32 declares it, and only that cast is guarded by it. *)
+  predicate of_int_in_range (i:int) = Float32.no_overflow RNE (FromInt.from_int i)
+
+  (* Truncation toward zero, matching Rust `as`. Why3 leaves the result
+     uninterpreted on infinities and NaN (ieee_float.mlw, `to_int`), so a
+     program-level `as` asserts `is_finite a /\ IntN.in_bounds (to_int a)`
+     first — Rust's exact condition — instead of saturating. *)
+  function to_int (a:t) : int = Float32.to_int RTZ a
+
+  (* `of_int` and `to_int` have no SMT-LIB counterpart, and the solvers'
+     float driver drops every ieee_float axiom ("remove allprops"), theirs
+     with them: restated here, for the integers the format holds exactly. *)
+  use int.Int
+
+  axiom of_int_exact: forall i:int [of_int i].
+    - 16777216 <= i <= 16777216 ->
+      is_finite (of_int i) /\ to_real (of_int i) = FromInt.from_int i
+
+  axiom to_int_exact: forall a:t [to_int a].
+    is_finite a -> Float32.is_int a -> to_real a = FromInt.from_int (to_int a)
 end
 module Float64
   use ieee_float.Float64
@@ -33,4 +81,61 @@ module Float64
   predicate gt (a:t) (b:t) = Float64.gt a b
   predicate eq (a:t) (b:t) = Float64.eq a b
   predicate ne (a:t) (b:t) = not (Float64.eq a b)
+
+  (* Mathematical view, realized by the clone as `t'real`. See Float32. *)
+  function to_real (a:t) : real = Float64.t'real a
+
+  predicate is_finite (a:t) = Float64.t'isFinite a
+  predicate is_nan (a:t) = Float64.is_nan a
+  predicate is_infinite (a:t) = Float64.is_infinite a
+  predicate is_zero (a:t) = Float64.is_zero a
+
+  function abs (a:t) : t = Float64.abs a
+  function sqrt (a:t) : t = Float64.sqrt RNE a
+  function round_ties_even (a:t) : t = Float64.roundToIntegral RNE a
+  (* IEEE fusedMultiplyAdd: `a · b + c` rounded once, as Rust's `mul_add`. *)
+  function mul_add (a:t) (b:t) (c:t) : t = Float64.fma RNE a b c
+
+  function of_int (i:int) : t = Float64.of_int RNE i
+
+  (* Truncation toward zero; guarded at the program site. See Float32. *)
+  function to_int (a:t) : int = Float64.to_int RTZ a
+
+  (* `of_int` and `to_int` have no SMT-LIB counterpart, and the solvers'
+     float driver drops every ieee_float axiom ("remove allprops"), theirs
+     with them: restated here, for the integers the format holds exactly. *)
+  use int.Int
+  use real.FromInt
+
+  axiom of_int_exact: forall i:int [of_int i].
+    - 9007199254740992 <= i <= 9007199254740992 ->
+      is_finite (of_int i) /\ to_real (of_int i) = FromInt.from_int i
+
+  axiom to_int_exact: forall a:t [to_int a].
+    is_finite a -> Float64.is_int a -> to_real a = FromInt.from_int (to_int a)
+end
+(* Conversions between the two formats. They cannot live in either module
+   above: `ieee_float.FloatConverter` uses both, so hosting them in `Float32`
+   or `Float64` would make the two prelude modules mutually dependent. *)
+module FloatConvert
+  use ieee_float.FloatConverter
+  use ieee_float.Float32 as F32
+  use ieee_float.Float64 as F64
+
+  (* `f32 as f64`. Exact: `FloatConverter.to_float64_exact` gives
+     `F64.to_real (to_float64 m x) = F32.to_real x` for finite `x`, so the
+     widening cast carries no obligation. *)
+  function to_float64 (a:F32.t) : F64.t = FloatConverter.to_float64 RNE a
+
+  (* `f64 as f32`. Lossy: `FloatConverter.to_float32_conv` is stated under
+     `F32.no_overflow m (F64.to_real x)`, which is exactly the guard the
+     program-level cast must discharge. *)
+  function to_float32 (a:F64.t) : F32.t = FloatConverter.to_float32 RNE a
+
+  (* design: narrowing is strict — a value that would round to infinity fails
+     verification instead of quietly becoming inf. Ceiling: this rejects code
+     that relies on overflow to infinity; the upgrade path is a
+     `wrapping_`-style total escape hatch, not a relaxation of this predicate. *)
+  predicate narrowing_in_range (a:F64.t) =
+    F64.t'isFinite a /\ F32.no_overflow RNE (F64.t'real a)
 end

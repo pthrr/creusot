@@ -27,10 +27,10 @@ use rustc_middle::{
     ty::{self, Ty, TyCtxt, TyKind},
 };
 use rustc_span::Span;
-use rustc_type_ir::IntTy;
+use rustc_type_ir::{FloatTy, IntTy, UintTy};
 use why3::{
     Ident, Name,
-    declaration::Condition as WCondition,
+    declaration::{Attribute, Condition as WCondition},
     exp::{
         BinOp as WBinOp, Binder, Constant, Exp, Pattern as WPattern, Trigger as WTrigger,
         UnOp as WUnOp,
@@ -116,7 +116,7 @@ pub(crate) fn unsupported_cast<'tcx>(
 ) -> ! {
     ctx.crash_and_error(
         span,
-        format!("unsupported cast from {src} to {tgt} (allowed: bool as integer, integer as integer, or pointer as pointer)"),
+        format!("unsupported cast from {src} to {tgt} (allowed: bool as integer, integer as integer, pointer as pointer, or between f32, f64 and integers outside #[bitwise_proof])"),
     )
 }
 
@@ -162,6 +162,133 @@ where
     why3::Exp::qvar(of_qname).app([why3::Exp::qvar(to_qname).app([arg])])
 }
 
+/// Lower a cast whose source or target is a float, as a *total* prelude
+/// application: `f32 as f64` / `f64 as f32` via the `ieee_float` converters,
+/// `iN as fN` via `of_int`, `fN as iN` via `to_int` (truncating toward zero,
+/// matching Rust `as`).
+///
+/// Totality is required here because this lowering is shared with pure logic
+/// terms, which have no channel for emitting a proof obligation. The guard
+/// that makes a lossy cast *loud* lives at the program lowering site instead —
+/// see `cast_float_guard`, which the imperative path applies before calling
+/// this. A float cast reached from a `#[logic]` body is therefore total and
+/// unguarded by construction.
+pub fn cast_float<'tcx, N>(
+    namer: &N,
+    from_ty: Ty<'tcx>,
+    to_ty: Ty<'tcx>,
+    arg: why3::Exp,
+) -> why3::Exp
+where
+    N: Namer<'tcx>,
+{
+    let tcx = namer.tcx();
+    match (from_ty.kind(), to_ty.kind()) {
+        (TyKind::Float(from), TyKind::Float(to)) if from == to => arg,
+        (TyKind::Float(FloatTy::F32), TyKind::Float(FloatTy::F64)) => {
+            why3::Exp::qvar(namer.in_pre(PreMod::FloatConvert, "to_float64")).app([arg])
+        }
+        (TyKind::Float(FloatTy::F64), TyKind::Float(FloatTy::F32)) => {
+            why3::Exp::qvar(namer.in_pre(PreMod::FloatConvert, "to_float32")).app([arg])
+        }
+        (TyKind::Int(_) | TyKind::Uint(_), TyKind::Float(_)) => {
+            let int = int_value(namer, from_ty, arg);
+            why3::Exp::qvar(namer.in_pre(ty_to_prelude(tcx, to_ty), "of_int")).app([int])
+        }
+        (TyKind::Float(_), TyKind::Int(_) | TyKind::Uint(_)) => {
+            let truncated =
+                why3::Exp::qvar(namer.in_pre(ty_to_prelude(tcx, from_ty), "to_int")).app([arg]);
+            why3::Exp::qvar(namer.in_pre(ty_to_prelude(tcx, to_ty), "of_int")).app([truncated])
+        }
+        _ => unreachable!("`{from_ty} as {to_ty}`: callers check `float_cast_supported` first"),
+    }
+}
+
+/// Whether the prelude can express a cast that has a float on at least one
+/// side: every float involved is `f32` or `f64`, the other side is one of those
+/// or a machine integer, and the function is not in bitwise mode — whose integer
+/// modules expose no `of_int`, so a float-to-integer cast there would have no
+/// target to build. Every cast site reports anything else through
+/// `unsupported_cast` rather than lowering it.
+pub fn float_cast_supported<'tcx, N>(namer: &N, from_ty: Ty<'tcx>, to_ty: Ty<'tcx>) -> bool
+where
+    N: Namer<'tcx>,
+{
+    let expressible = |ty: Ty<'tcx>| {
+        matches!(
+            ty.kind(),
+            TyKind::Float(FloatTy::F32 | FloatTy::F64) | TyKind::Int(_) | TyKind::Uint(_)
+        )
+    };
+    !namer.bitwise_mode()
+        && (from_ty.is_floating_point() || to_ty.is_floating_point())
+        && expressible(from_ty)
+        && expressible(to_ty)
+}
+
+/// The mathematical integer a machine integer denotes, outside bitwise mode:
+/// `to_int` for signed types, `t'int` for unsigned ones, as in `cast_int`.
+fn int_value<'tcx, N>(namer: &N, ty: Ty<'tcx>, arg: why3::Exp) -> why3::Exp
+where
+    N: Namer<'tcx>,
+{
+    let name = if let TyKind::Int(_) = ty.kind() { "to_int" } else { "t'int" };
+    why3::Exp::qvar(namer.in_pre(ty_to_prelude(namer.tcx(), ty), name)).app([arg])
+}
+
+/// The condition a lossy float cast must satisfy at a program site, as a
+/// `why3::Exp` over the cast's argument. The program lowering emits it as an
+/// `IntermediateStmt::Assert` immediately before the total conversion from
+/// `cast_float`, so the cast is proved safe rather than assumed.
+///
+/// - `fN as iN` / `fN as uN`: `is_finite a /\ IntN.in_bounds (FloatN.to_int a)`
+///   — Rust's exact condition, the truncated value fitting the target. An
+///   `Assert` rather than a guarded prelude `let` (the `char` pattern) because
+///   the condition spans two prelude modules, which no single `let` can see.
+/// - `f64 as f32`: `FloatConvert.narrowing_in_range a`.
+/// - `u128 as f32`: `Float32.no_overflow RNE (from_int a)` — the one integer
+///   source whose largest values exceed `f32::MAX`.
+/// - `None` for every conversion that cannot overflow: `f32 as f64`, and every
+///   other integer-to-float cast, which only rounds.
+///
+/// design: strict by default — a value that would saturate or overflow fails
+/// verification rather than clamping silently. Ceiling: this rejects code that
+/// legitimately relies on saturation. Upgrade path is a `wrapping_`-style
+/// total escape hatch on the Rust side, not a relaxation of this guard.
+pub fn cast_float_guard<'tcx, N>(
+    namer: &N,
+    from_ty: Ty<'tcx>,
+    to_ty: Ty<'tcx>,
+    arg: &why3::Exp,
+) -> Option<why3::Exp>
+where
+    N: Namer<'tcx>,
+{
+    let tcx = namer.tcx();
+    let (guard, expl) = match (from_ty.kind(), to_ty.kind()) {
+        (TyKind::Float(FloatTy::F64), TyKind::Float(FloatTy::F32)) => (
+            why3::Exp::qvar(namer.in_pre(PreMod::FloatConvert, "narrowing_in_range"))
+                .app([arg.clone()]),
+            "expl:float narrowing overflow",
+        ),
+        (TyKind::Float(_), TyKind::Int(_) | TyKind::Uint(_)) => {
+            let float = ty_to_prelude(tcx, from_ty);
+            let finite = why3::Exp::qvar(namer.in_pre(float, "is_finite")).app([arg.clone()]);
+            let truncated = why3::Exp::qvar(namer.in_pre(float, "to_int")).app([arg.clone()]);
+            let fits = why3::Exp::qvar(namer.in_pre(ty_to_prelude(tcx, to_ty), "in_bounds"))
+                .app([truncated]);
+            (finite.log_and(fits), "expl:float to integer cast out of range")
+        }
+        (TyKind::Uint(UintTy::U128), TyKind::Float(FloatTy::F32)) => (
+            why3::Exp::qvar(namer.in_pre(PreMod::Float32, "of_int_in_range"))
+                .app([int_value(namer, from_ty, arg.clone())]),
+            "expl:integer to float overflow",
+        ),
+        _ => return None,
+    };
+    Some(guard.with_attr(Attribute::Attr(expl.to_string())))
+}
+
 impl<'tcx, N: Namer<'tcx>> Lower<'_, 'tcx, N> {
     fn lower_term(&self, term: &Term<'tcx>) -> Exp {
         match &term.kind {
@@ -182,6 +309,14 @@ impl<'tcx, N: Namer<'tcx>> Lower<'_, 'tcx, N> {
                 let argty = arg.ty;
                 let arg = self.lower_term(arg);
                 match argty.kind() {
+                    // Total in logic: a term has no channel for the guard that
+                    // makes a program-level cast loud.
+                    _ if argty.is_floating_point() || term.ty.is_floating_point() => {
+                        if !float_cast_supported(self.names, argty, term.ty) {
+                            unsupported_cast(self.ctx, term.span, argty, term.ty)
+                        }
+                        cast_float(self.names, argty, term.ty, arg)
+                    }
                     TyKind::Bool => match term.ty.kind() {
                         TyKind::Int(_) | TyKind::Uint(_) => {
                             let qname =

@@ -6,8 +6,8 @@ use crate::{
         projections::{borrow_generated_id, projections_term},
         signature::lower_contract,
         term::{
-            binop_to_binop, cast_int, lower_literal, lower_pat, lower_pure, tyconst_to_term_final,
-            unsupported_cast,
+            binop_to_binop, cast_float, cast_int, float_cast_supported, lower_literal, lower_pat,
+            lower_pure, tyconst_to_term_final, unsupported_cast,
         },
         ty::{constructor, translate_ty, ty_to_prelude},
     },
@@ -112,6 +112,13 @@ impl<'tcx, N: Namer<'tcx>> VCGen<'_, 'tcx, N> {
             TermKind::Cast { arg } => {
                 let argty = arg.ty;
                 match argty.kind() {
+                    // Total, as in `Lower::lower_term`: logic has no guard channel.
+                    _ if argty.is_floating_point() || t.ty.is_floating_point() => {
+                        if !float_cast_supported(self.names, argty, t.ty) {
+                            unsupported_cast(self.ctx, t.span, argty, t.ty)
+                        }
+                        self.build_wp(arg, &|arg| k(cast_float(self.names, argty, t.ty, arg)))
+                    }
                     TyKind::Bool => match t.ty.kind() {
                         TyKind::Int(_) | TyKind::Uint(_) => {
                             self.build_wp(arg, &|arg| {

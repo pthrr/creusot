@@ -162,7 +162,20 @@ impl<'tcx> BodyTranslator<'_, 'tcx> {
                     ),
                 }
             }
-            Rvalue::Cast(CastKind::IntToInt | CastKind::PtrToPtr, op, cast_ty) => {
+            // Float conversions join the plain cast path: the prelude function is
+            // total, and the backend attaches the lossiness obligation at the
+            // program site (`cast_float_guard`). `FloatToInt` truncates toward
+            // zero like Rust `as`, but out-of-range and NaN inputs are rejected
+            // by that guard rather than saturated silently.
+            Rvalue::Cast(
+                CastKind::IntToInt
+                | CastKind::PtrToPtr
+                | CastKind::FloatToFloat
+                | CastKind::IntToFloat
+                | CastKind::FloatToInt,
+                op,
+                cast_ty,
+            ) => {
                 let op_ty = op.ty(self.body, self.tcx());
                 RValue::Cast(self.translate_operand(op, span), op_ty, *cast_ty)
             }
@@ -198,10 +211,7 @@ impl<'tcx> BodyTranslator<'_, 'tcx> {
                 CastKind::PointerCoercion(..)
                 | CastKind::PointerExposeProvenance
                 | CastKind::PointerWithExposedProvenance
-                | CastKind::IntToFloat
-                | CastKind::FloatToInt
                 | CastKind::FnPtrToPtr
-                | CastKind::FloatToFloat
                 | CastKind::Subtype
                 | CastKind::Transmute
                 | CastKind::BoxDerefTransmute,

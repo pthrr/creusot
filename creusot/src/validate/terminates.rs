@@ -169,6 +169,22 @@ pub(crate) fn validate_terminates(ctx: &TranslationCtx) -> RecursiveCalls {
             // Need more than 2 components.
             continue;
         }
+        // Recursion only matters for functions that must terminate: logic
+        // functions and `#[check(terminates)]` program functions. The
+        // simple-recursion check above skips every other function, and so must
+        // this one. Otherwise a cycle of ordinary program functions is rejected
+        // although nothing in it has to terminate — including the cycle every
+        // generic call closes through a trait impl, which links to all of the
+        // impl's methods at once.
+        let must_terminate = cycle.iter().any(|&node| {
+            let id = call_graph.node_weight(node).unwrap().def_id();
+            id.is_local()
+                && ctx.def_kind(id).is_fn_like()
+                && (is_pearlite(ctx.tcx, id) || ctx.sig(id).contract.purity.is_terminates())
+        });
+        if !must_terminate {
+            continue;
+        }
         let in_cycle: HashSet<_> = cycle.into_iter().collect();
         let cycle = find_path(&call_graph, &in_cycle, root, root);
         let root_def_id = call_graph[root].def_id();
