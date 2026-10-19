@@ -693,6 +693,31 @@ spec_abs_diff!(u64, i64);
 spec_abs_diff!(u128, i128);
 spec_abs_diff!(usize, isize);
 
+/// Adds the specification of `wrapping_abs`, which only signed integer types
+/// have: the absolute value, except that `MIN` has none in range and wraps to
+/// itself.
+macro_rules! spec_wrapping_abs {
+    ($signed:ty) => {
+        extern_spec! {
+            impl $signed {
+                #[allow(dead_code)]
+                #[check(ghost)]
+                #[ensures(self@ == $signed::MIN@ ==> result == self)]
+                #[ensures(self@ != $signed::MIN@
+                    ==> result@ == if self@ < 0 { -self@ } else { self@ })]
+                fn wrapping_abs(self) -> $signed;
+            }
+        }
+    };
+}
+
+spec_wrapping_abs!(i8);
+spec_wrapping_abs!(i16);
+spec_wrapping_abs!(i32);
+spec_wrapping_abs!(i64);
+spec_wrapping_abs!(i128);
+spec_wrapping_abs!(isize);
+
 macro_rules! spec_shifts_logic {
     ($lhs:ty | $rhs:ty) => {
         impl ShlLogic<$rhs> for $lhs {

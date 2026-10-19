@@ -8,6 +8,7 @@ pub mod clone;
 pub mod cmp;
 pub mod convert;
 pub mod default;
+pub mod float;
 pub mod fmt;
 pub mod hint;
 pub mod intrinsics;

@@ -5,6 +5,7 @@
 #![cfg_attr(not(creusot), allow(unused_imports))]
 use crate::prelude::*;
 
+pub mod float;
 pub mod fmap;
 mod fset;
 mod id;
