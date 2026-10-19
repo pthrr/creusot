@@ -8,7 +8,6 @@ use crate::{
     exp::{AssocDir, BinOp, Binder, Constant, Pattern, Precedence, Quant, Trigger, UnOp},
     ty::Type,
 };
-use num::{Float, Zero};
 use pretty::*;
 use std::{
     collections::{HashMap, HashSet},
@@ -1152,20 +1151,28 @@ impl Print for Constant {
     }
 }
 
+/// A finite `f64` as a literal Why3 reads back as exactly the same value.
+///
+/// Why3 interprets a float literal as an exact real and rejects it unless the
+/// target format represents that real exactly, so every digit printed here must
+/// be exact. Decimal is used only where it is: integral values of magnitude at
+/// most 2^53, which Rust's `Display` writes digit for digit. Everything else is
+/// hexadecimal built straight from the bits — exact by construction, with the
+/// 52-bit fraction always written as all 13 hex digits. (Shortest round-trip
+/// decimal is not exact beyond 2^53: `1e30` is not the value of `1e30f64`.)
 fn print_float(f: f64) -> String {
-    if f.fract() != 0.0 {
-        let (mantissa, exp, _) = f.integer_decode();
-        let leading = if f.is_subnormal() { "0" } else { "1" };
-
-        format!(
-            "{}0x{}.{:012x}p{}",
-            if f.is_sign_negative() { "-" } else { "" },
-            leading,
-            mantissa & !(1 << 52),
-            exp + 52
-        )
+    let sign = if f.is_sign_negative() { "-" } else { "" };
+    if f.fract() == 0.0 && f.abs() <= 9007199254740992.0 {
+        return format!("{sign}{}.0", f.abs());
+    }
+    let bits = f.to_bits();
+    let exponent = ((bits >> 52) & 0x7ff) as i64;
+    let fraction = bits & ((1u64 << 52) - 1);
+    if exponent == 0 {
+        // Subnormal: no implicit leading bit, fixed exponent.
+        format!("{sign}0x0.{fraction:013x}p-1022")
     } else {
-        format!("{}{f}.0", if f.is_sign_negative() && f.is_zero() { "-" } else { "" })
+        format!("{sign}0x1.{fraction:013x}p{}", exponent - 1023)
     }
 }
 
