@@ -15,7 +15,7 @@
               { "prover": "cvc5", "time": 0.028 },
               {
                 "tactic": "split_vc",
-                "children": [ { "prover": "cvc5", "time": 0.732 } ]
+                "children": [ { "prover": "cvc4", "time": 0.144 } ]
               }
             ]
           }
