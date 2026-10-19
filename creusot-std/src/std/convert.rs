@@ -301,6 +301,9 @@ spec_from!(bool => i64);
 spec_from!(bool => i128);
 spec_from!(bool => isize);
 
+// integer -> float, exact: every `i32` is an `f64`.
+spec_from!(i32 => f64);
+
 // unsigned -> unsigned
 spec_from!(u8 => u16);
 spec_from!(u8 => u32);

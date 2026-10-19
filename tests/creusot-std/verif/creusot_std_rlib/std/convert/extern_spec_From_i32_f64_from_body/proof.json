@@ -1,0 +1,11 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_extern_spec_From_i32_f64_from_body": {
+        "prover": "z3",
+        "time": 0.002
+      }
+    }
+  }
+}

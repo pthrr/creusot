@@ -1,0 +1,14 @@
+use creusot.int.Int32
+use creusot.float.Float64
+use creusot.prelude.Any
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let extern_spec_From_i32_f64_from_body (small: Int32.t) (return (x: Float64.t)) = (! bb0
+  [ bb0 = s0 [ s0 = [ &_ret <- Float64.of_int (Int32.to_int small) ] s1 | s1 = return {_ret} ] ]
+  [ & _ret: Float64.t = Any.any_l () | & small: Int32.t = small ])
+  [ return (result: Float64.t) -> {[@stop_split] [@expl:extern_spec_From_i32_f64_from_body ensures] result
+    = Float64.of_int (Int32.to_int small)}
+    (! return {result}) ]
